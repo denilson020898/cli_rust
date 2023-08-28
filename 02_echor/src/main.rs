@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 
-// squash me daddy 2 3
+// squash me daddy 2 3 3
 fn main() {
     let matches = App::new("echor")
         .version("0.1.0")
