@@ -1,5 +1,9 @@
 use clap::{App, Arg};
-use std::error::Error;
+use std::{
+    error::Error,
+    fs::File,
+    io::{self, BufRead, BufReader, Read},
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -28,7 +32,7 @@ pub fn get_args() -> MyResult<Config> {
                 .short("n")
                 .long("lines")
                 .help("Number of lines")
-                .default_value("10")
+                .default_value("10"),
         )
         .arg(
             Arg::with_name("bytes")
@@ -47,7 +51,7 @@ pub fn get_args() -> MyResult<Config> {
         .value_of("lines")
         .map(parse_positive_int)
         .transpose()
-        .map_err(|e| format!("illegal line count -- {}", e))? ;
+        .map_err(|e| format!("illegal line count -- {}", e))?;
 
     let bytes = matches
         .value_of("bytes")
@@ -62,15 +66,10 @@ pub fn get_args() -> MyResult<Config> {
     })
 }
 
-pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
-    Ok(())
-}
-
 fn parse_positive_int(value: &str) -> MyResult<usize> {
     match value.parse() {
         Ok(n) if n > 0 => Ok(n),
-        _ => Err(value.into())
+        _ => Err(value.into()),
     }
 }
 
@@ -90,4 +89,49 @@ fn test_parse_positive_int() {
     let res = parse_positive_int("0");
     assert!(res.is_err());
     assert_eq!(res.unwrap_err().to_string(), "0".to_string());
+}
+
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+pub fn run(config: Config) -> MyResult<()> {
+    let num_files = config.files.len();
+    for (file_index, filename) in config.files.iter().enumerate() {
+        match open(&filename) {
+            Err(err) => eprintln!("head: {}: {}\n", filename, err),
+            Ok(mut file) => {
+                if num_files > 1 {
+                    println!(
+                        "{}==> {} <==",
+                        if file_index > 0 { "\n" } else { "" },
+                        filename
+                    );
+                }
+
+                if let Some(num_bytes) = config.bytes {
+                    let mut handle = file.take(num_bytes as u64);
+                    let mut buffer = vec![0; num_bytes];
+                    let bytes_read = handle.read(&mut buffer)?;
+                    print!("{}", String::from_utf8_lossy(&buffer[..bytes_read]));
+                } else {
+                    let mut line = String::new();
+                    for _ in 0..config.lines {
+                        let bytes = file.read_line(&mut line)?;
+                        if bytes == 0 {
+                            break;
+                        }
+
+                        print!("{}", line);
+                        line.clear();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
