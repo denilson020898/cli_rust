@@ -1,5 +1,9 @@
 use clap::{App, Arg};
-use std::error::Error;
+use std::{
+    error::Error,
+    fs::File,
+    io::{stdin, stdout, BufRead, BufReader, Write},
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -28,10 +32,10 @@ pub fn get_args() -> MyResult<Config> {
         )
         .arg(
             Arg::with_name("count")
-                .value_name("COUNT")
                 .short("c")
+                .help("Show counts")
                 .long("count")
-                .help("Show counts"),
+                .takes_value(false),
         )
         .get_matches();
 
@@ -41,7 +45,7 @@ pub fn get_args() -> MyResult<Config> {
     // let out_file = matches
     //     .value_of_lossy("outfile")
     //     .and_then(|sq| Some(sq.to_string()));
-    let out_file = matches.value_of("out_file").map(String::from);
+    let out_file = matches.value_of("outfile").map(String::from);
 
     Ok(Config {
         in_file,
@@ -50,7 +54,52 @@ pub fn get_args() -> MyResult<Config> {
     })
 }
 
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
 pub fn run(config: Config) -> MyResult<()> {
-    dbg!(config);
+    let mut file = open(&config.in_file).map_err(|e| format!("{}: {}", config.in_file, e))?;
+    let mut out_file: Box<dyn Write> = match &config.out_file {
+        Some(out_name) => Box::new(File::create(out_name)?),
+        _ => Box::new(stdout()),
+    };
+
+    let mut line = String::new();
+    let mut prev_line = String::new();
+
+    let mut count = 0;
+
+    let mut print = |count: u64, text: &str| -> MyResult<()> {
+        if count > 0 {
+            if config.count {
+                write!(out_file, "{:>4} {}", count, text)?;
+            } else {
+                write!(out_file, "{}", text)?;
+            }
+        };
+        Ok(())
+    };
+
+    loop {
+        let bytes = file.read_line(&mut line)?;
+        if bytes == 0 {
+            break;
+        }
+
+        if line.trim_end() != prev_line.trim_end() {
+            print(count, &prev_line)?;
+            prev_line = line.clone();
+            count = 0;
+        }
+
+        count += 1;
+        line.clear();
+    }
+    print(count, &prev_line)?;
+
     Ok(())
 }
