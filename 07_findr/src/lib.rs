@@ -2,8 +2,8 @@ use crate::EntryType::*;
 
 use clap::{App, Arg};
 use regex::Regex;
-use walkdir::WalkDir;
 use std::error::Error;
+use walkdir::{DirEntry, WalkDir};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -88,14 +88,41 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
+    let type_filter = |entry: &DirEntry| {
+        config.entry_types.is_empty()
+            || config
+                .entry_types
+                .iter()
+                .any(|entry_types| match entry_types {
+                    Dir => entry.file_type().is_symlink(),
+                    File => entry.file_type().is_file(),
+                    Link => entry.file_type().is_file(),
+                })
+    };
 
-    for path in config.paths {
-        for entry in WalkDir::new(path) {
-            match entry {
-                Err(e) => eprintln!("{}", e),
-                Ok(entry) => println!("{}", entry.path().display()),
-            }
-        }
+    let name_filter = |entry: &DirEntry| {
+        config.names.is_empty()
+            || config
+                .names
+                .iter()
+                .any(|re| re.is_match(&entry.file_name().to_string_lossy()))
+    };
+
+    for path in &config.paths {
+        let entries = WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| match e {
+                Ok(entry) => Some(entry),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    None
+                }
+            })
+            .filter(type_filter)
+            .filter(name_filter)
+            .map(|entry| entry.path().display().to_string())
+            .collect::<Vec<_>>();
+        println!("{}", entries.join("\n"));
     }
 
     Ok(())
