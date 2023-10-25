@@ -77,15 +77,30 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 fn parse_pos(range: &str) -> MyResult<PositionList> {
-    match range.parse::<usize>() {
-        Ok(r) => {
-            let mut range_vec = Vec::default();
-            range_vec.push(Range { start: r, end: r });
-            Ok(range_vec)
+    let mut range_vec = Vec::default();
+
+    let extracts = range.split(",");
+
+    for extract in extracts {
+        if extract.contains("+") || extract.contains(char::is_alphabetic) {
+            return Err(format!("illegal list value: \"{}\"", range).into());
         }
-        _ => Err(range.into()),
+
+        let split_extract = extract.split("-").collect::<Vec<&str>>();
+        if split_extract.len() == 1 {
+            match extract.parse::<usize>() {
+                Ok(e) if e > 0 => range_vec.push(Range { start: e - 1, end: e }),
+                _ => {
+                    return Err(format!("illegal list value: \"{}\"", range).into());
+                }
+            }
+        } else if split_extract.len() == 2 {
+        } else {
+            return Err(format!("illegal list value: \"{}\"", range).into());
+        }
     }
 
+    Ok(range_vec)
     // Vec<Range<usize>>
 }
 
@@ -173,8 +188,7 @@ mod unit_test {
             "First number in range (2) must be lower than second number (1)"
         );
 
-        // HUZZAH PATH TESTS
-
+        // HUZZAH! PATH TESTS
         let res = parse_pos("1");
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), vec![0..1]);
@@ -210,7 +224,11 @@ mod unit_test {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
-    println!("{:?}", parse_pos("0010003"));
+    // println!("{:#?}", config);
+    println!("{:?}", parse_pos(""));
+    println!("{:?}", parse_pos("0"));
+    println!("{:?}", parse_pos("a"));
+    println!("{:?}", parse_pos("01"));
+    println!("{:?}", parse_pos("01,03,04"));
     Ok(())
 }
