@@ -1,5 +1,8 @@
 use clap::{App, Arg};
-use std::{error::Error, ops::Range};
+use std::{
+    error::Error,
+    ops::{Deref, Range},
+};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 type PositionList = Vec<Range<usize>>;
@@ -15,7 +18,7 @@ pub enum Extract {
 pub struct Config {
     files: Vec<String>,
     delimiter: u8,
-    // extract: Extract,
+    extract: Extract,
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -32,12 +35,23 @@ pub fn get_args() -> MyResult<Config> {
                 .default_value("-"),
         )
         .arg(
+            Arg::with_name("delim")
+                .short("d")
+                .long("delim")
+                .help("Field delimiter")
+                .takes_value(true)
+                .value_name("DELIMETER")
+                .default_value("\t"),
+        )
+        .arg(
             Arg::with_name("bytes")
                 .short("b")
                 .long("bytes")
                 .help("Selected bytes")
                 .takes_value(true)
-                .value_name("BYTES"),
+                .value_name("BYTES")
+                .conflicts_with("chars")
+                .conflicts_with("fields"),
         )
         .arg(
             Arg::with_name("chars")
@@ -45,16 +59,9 @@ pub fn get_args() -> MyResult<Config> {
                 .long("chars")
                 .help("Selected characters")
                 .takes_value(true)
-                .value_name("CHARS"),
-        )
-        .arg(
-            Arg::with_name("delim")
-                .short("d")
-                .long("delim")
-                .help("Field delimiter")
-                .takes_value(true)
-                .value_name("DELIMETER")
-                .default_value(""),
+                .value_name("CHARS")
+                .conflicts_with("bytes")
+                .conflicts_with("fields"),
         )
         .arg(
             Arg::with_name("fields")
@@ -62,17 +69,42 @@ pub fn get_args() -> MyResult<Config> {
                 .long("fields")
                 .help("Selected fields")
                 .takes_value(true)
-                .value_name("FIELDS"),
+                .value_name("FIELDS")
+                .conflicts_with("chars")
+                .conflicts_with("bytes"),
         )
         .get_matches();
 
-    let files = vec![];
-    let delimiter = 'a' as u8;
+    let files = matches.values_of_lossy("files").unwrap();
+    let delimiter = matches.value_of_lossy("delim").unwrap();
+    let delim_bytes = delimiter.as_bytes();
+    if delim_bytes.len() != 1 {
+        return Err(From::from(format!(
+            "--delim \"{}\" must be a single byte",
+            delimiter
+        )));
+    }
+
+    let fields = matches.value_of("fields").map(parse_pos).transpose()?;
+    let bytes = matches.value_of("bytes").map(parse_pos).transpose()?;
+    let chars = matches.value_of("chars").map(parse_pos).transpose()?;
+
+    let ranges = if let Some(field_range) = fields {
+        Extract::Fields(field_range)
+    } else if let Some(bytes_range) = bytes {
+        Extract::Bytes(bytes_range)
+    } else if let Some(chars_range) = chars {
+        Extract::Chars(chars_range)
+    } else {
+        return Err("Must have --fields, --bytes, or --chars".into());
+    };
+
+    // let ranges = parse_pos(&fields)?;
 
     Ok(Config {
         files,
-        delimiter,
-        // extract: Extract::Bytes(()),
+        delimiter: *delim_bytes.first().unwrap(),
+        extract: ranges
     })
 }
 
@@ -109,7 +141,7 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
                         } else {
                             end = e
                         }
-                    },
+                    }
                     _ => {
                         return Err(format!("illegal list value: \"{}\"", split_extract).into());
                     }
@@ -117,11 +149,17 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
             }
 
             if start >= end {
-                return Err(format!("First number in range ({}) must be lower than second number ({})", start, end).into());
+                return Err(format!(
+                    "First number in range ({}) must be lower than second number ({})",
+                    start, end
+                )
+                .into());
             }
 
-            range_vec.push(Range { start: start - 1, end});
-
+            range_vec.push(Range {
+                start: start - 1,
+                end,
+            });
         } else {
             return Err(format!("illegal list value: \"{}\"", range).into());
         }
@@ -251,13 +289,6 @@ mod unit_test {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    // println!("{:#?}", config);
-    println!("{:?}", parse_pos(""));
-    println!("{:?}", parse_pos("0"));
-    println!("{:?}", parse_pos("a"));
-    println!("{:?}", parse_pos("01"));
-    println!("{:?}", parse_pos("01,03,04"));
-    println!("{:?}", parse_pos("1-1-a"));
-    println!("{:?}", parse_pos("2-1"));
+    println!("{:#?}", &config);
     Ok(())
 }
