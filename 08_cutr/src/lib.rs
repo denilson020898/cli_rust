@@ -1,7 +1,9 @@
 use clap::{App, Arg};
+use regex::Regex;
 use std::{
     error::Error,
     ops::{Deref, Range},
+    usize,
 };
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -104,11 +106,11 @@ pub fn get_args() -> MyResult<Config> {
     Ok(Config {
         files,
         delimiter: *delim_bytes.first().unwrap(),
-        extract: ranges
+        extract: ranges,
     })
 }
 
-fn parse_pos(range: &str) -> MyResult<PositionList> {
+fn parse_pos2(range: &str) -> MyResult<PositionList> {
     let mut range_vec = Vec::default();
 
     let extracts = range.split(",");
@@ -167,6 +169,44 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
 
     Ok(range_vec)
     // Vec<Range<usize>>
+}
+
+fn parse_index(input: &str) -> Result<usize, String> {
+    let value_error = || format!("illegal list value: \"{}\"", input);
+    input
+        .starts_with("+")
+        .then(|| Err(value_error()))
+        .unwrap_or_else(|| {
+            input
+                .parse::<std::num::NonZeroUsize>()
+                .map(|n| usize::from(n) - 1)
+                .map_err(|_| value_error())
+        })
+}
+
+fn parse_pos(range: &str) -> MyResult<PositionList> {
+    let range_re = Regex::new(r"^(\d+)-(\d+)$").unwrap();
+    range
+        .split(',')
+        .into_iter()
+        .map(|pos_list| {
+            parse_index(pos_list).map(|n| n..n + 1).or_else(|e| {
+                range_re.captures(pos_list).ok_or(e).and_then(|captures| {
+                    let n1 = parse_index(&captures[1])?;
+                    let n2 = parse_index(&captures[2])?;
+                    if n1 >= n2 {
+                        return Err(format!(
+                            "First number in range ({}) must be lower than second number ({})",
+                            n1 + 1,
+                            n2 + 1,
+                        ));
+                    }
+                    Ok(n1..n2 + 1)
+                })
+            })
+        })
+        .collect::<Result<_, _>>()
+        .map_err(From::from)
 }
 
 #[cfg(test)]
