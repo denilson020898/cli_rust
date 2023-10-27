@@ -83,18 +83,45 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
 
     for extract in extracts {
         if extract.contains("+") || extract.contains(char::is_alphabetic) {
-            return Err(format!("illegal list value: \"{}\"", range).into());
+            return Err(format!("illegal list value: \"{}\"", extract).into());
         }
 
-        let split_extract = extract.split("-").collect::<Vec<&str>>();
-        if split_extract.len() == 1 {
+        let split_extracts = extract.split("-").collect::<Vec<&str>>();
+        if split_extracts.len() == 1 {
             match extract.parse::<usize>() {
-                Ok(e) if e > 0 => range_vec.push(Range { start: e - 1, end: e }),
+                Ok(e) if e > 0 => range_vec.push(Range {
+                    start: e - 1,
+                    end: e,
+                }),
                 _ => {
                     return Err(format!("illegal list value: \"{}\"", range).into());
                 }
             }
-        } else if split_extract.len() == 2 {
+        } else if split_extracts.len() == 2 {
+            let mut start = 0;
+            let mut end = 0;
+
+            for split_extract in split_extracts {
+                match split_extract.parse::<usize>() {
+                    Ok(e) if e > 0 => {
+                        if start == 0 {
+                            start = e
+                        } else {
+                            end = e
+                        }
+                    },
+                    _ => {
+                        return Err(format!("illegal list value: \"{}\"", split_extract).into());
+                    }
+                }
+            }
+
+            if start >= end {
+                return Err(format!("First number in range ({}) must be lower than second number ({})", start, end).into());
+            }
+
+            range_vec.push(Range { start: start - 1, end});
+
         } else {
             return Err(format!("illegal list value: \"{}\"", range).into());
         }
@@ -230,5 +257,7 @@ pub fn run(config: Config) -> MyResult<()> {
     println!("{:?}", parse_pos("a"));
     println!("{:?}", parse_pos("01"));
     println!("{:?}", parse_pos("01,03,04"));
+    println!("{:?}", parse_pos("1-1-a"));
+    println!("{:?}", parse_pos("2-1"));
     Ok(())
 }
