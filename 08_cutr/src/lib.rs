@@ -53,7 +53,7 @@ pub fn get_args() -> MyResult<Config> {
                 .takes_value(true)
                 .value_name("BYTES")
                 .conflicts_with("chars")
-                .conflicts_with("fields"),
+                .conflicts_with_all(&["fields", "chars"]),
         )
         .arg(
             Arg::with_name("chars")
@@ -62,8 +62,7 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Selected characters")
                 .takes_value(true)
                 .value_name("CHARS")
-                .conflicts_with("bytes")
-                .conflicts_with("fields"),
+                .conflicts_with_all(&["fields", "bytes"]),
         )
         .arg(
             Arg::with_name("fields")
@@ -72,8 +71,7 @@ pub fn get_args() -> MyResult<Config> {
                 .help("Selected fields")
                 .takes_value(true)
                 .value_name("FIELDS")
-                .conflicts_with("chars")
-                .conflicts_with("bytes"),
+                .conflicts_with_all(&["bytes", "chars"]),
         )
         .get_matches();
 
