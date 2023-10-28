@@ -1,8 +1,11 @@
 use clap::{App, Arg};
+use csv::{StringRecord, ReaderBuilder, WriterBuilder};
 use regex::Regex;
 use std::{
     error::Error,
-    ops::{Deref, Range},
+    fs::File,
+    io::{BufRead, BufReader},
+    ops::{Deref, Index, Range},
     usize,
 };
 
@@ -207,9 +210,102 @@ fn parse_pos(range: &str) -> MyResult<PositionList> {
         .map_err(From::from)
 }
 
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(std::io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+
+fn extract_chars(line: &str, char_pos: &[Range<usize>]) -> String {
+    let chars: Vec<_> = line.chars().collect();
+    let mut entries: Vec<char> = vec![];
+    // for pos in char_pos.iter().cloned() {
+    //     // for i in pos {
+    //     //     if let Some(val) = chars.get(i) {
+    //     //         entries.push(*val);
+    //     //     }
+    //     // }
+    //     entries.extend(pos.filter_map(|i| chars.get(i)));
+    // }
+    // char_pos
+    //     .iter()
+    //     .cloned()
+    //     .map(|range| range.filter_map(|i| chars.get(i)))
+    //     .flatten()
+    //     .collect()
+
+    char_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| chars.get(i)))
+        .collect()
+}
+
+// fn extract_fields(record: &StringRecord, field_pos: &[Range<usize>]) -> Vec<String> {
+//     field_pos
+//         .iter()
+//         .cloned()
+//         .flat_map(|range| range.filter_map(|i| record.get(i)))
+//         .map(String::from)
+//         .collect()
+// }
+
+fn extract_fields<'a>(record: &'a StringRecord, field_pos: &'a [Range<usize>]) -> Vec<&'a str> {
+    field_pos
+        .iter()
+        .cloned()
+        .flat_map(|range| range.filter_map(|i| record.get(i)))
+        .collect()
+}
+
+fn extract_bytes(line: &str, byte_pos: &[Range<usize>]) -> String {
+    let bytes = line.as_bytes();
+    let entries: Vec<_> = byte_pos
+        .iter()
+        .clone()
+        .flat_map(|range| range.clone().filter_map(|i| bytes.get(i)).copied())
+        .collect();
+    String::from_utf8_lossy(&entries).into_owned()
+}
+
 #[cfg(test)]
 mod unit_test {
-    use super::parse_pos;
+
+    use csv::StringRecord;
+
+    use super::{extract_bytes, extract_chars, extract_fields, parse_pos};
+
+    #[test]
+    fn test_extract_chars() {
+        assert_eq!(extract_chars("", &[0..1]), "".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1]), "á".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1, 2..3]), "ác".to_string());
+        assert_eq!(extract_chars("ábc", &[0..3]), "ábc".to_string());
+        assert_eq!(extract_chars("ábc", &[2..3, 1..2]), "cb".to_string());
+        assert_eq!(extract_chars("ábc", &[0..1, 1..2, 4..5]), "áb".to_string());
+    }
+
+    #[test]
+    fn test_extract_fields() {
+        let rec = StringRecord::from(vec!["Captain", "Sham", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2]), &["Sham"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 2..3]), &["Captain", "12345"]);
+        assert_eq!(extract_fields(&rec, &[0..1, 3..4]), &["Captain"]);
+        assert_eq!(extract_fields(&rec, &[1..2, 0..1]), &["Sham", "Captain"]);
+    }
+
+    #[test]
+    fn test_extract_bytes() {
+        assert_eq!(extract_bytes("ábc", &[0..1]), "�".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..2]), "á".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..3]), "áb".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..4]), "ábc".to_string());
+        assert_eq!(extract_bytes("ábc", &[3..4, 2..3]), "cb".to_string());
+        assert_eq!(extract_bytes("ábc", &[0..2, 5..6]), "á".to_string());
+    }
 
     #[test]
     fn test_parse_pos() {
@@ -327,6 +423,36 @@ mod unit_test {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", &config);
+    for filename in &config.files {
+        match open(filename) {
+            Err(err) => eprintln!("{}: {}", filename, err),
+            Ok(file) => {
+                match &config.extract {
+                    Extract::Fields(field_pos) => {
+                        let mut reader = ReaderBuilder::new()
+                            .delimiter(config.delimiter)
+                            .has_headers(false)
+                            .from_reader(file);
+                        let mut wtr = WriterBuilder::new()
+                            .delimiter(config.delimiter)
+                            .from_writer(std::io::stdout());
+                        for record in reader.records() {
+                            wtr.write_record(extract_fields(&record?, field_pos))?;
+                        }
+                    }
+                    Extract::Bytes(byte_pos) => {
+                        for line in file.lines() {
+                            println!("{}", extract_bytes(&line?, byte_pos));
+                        }
+                    }
+                    Extract::Chars(char_pos) => {
+                        for line in file.lines() {
+                            println!("{}", extract_chars(&line?, char_pos));
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
