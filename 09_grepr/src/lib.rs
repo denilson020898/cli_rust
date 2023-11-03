@@ -1,4 +1,9 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    fs::File,
+    io::{BufRead, BufReader},
+    result,
+};
 
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
@@ -137,10 +142,48 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
     //     .collect::<Vec<_>>()
 }
 
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(std::io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+fn find_lines<T: BufRead>(
+    mut file: T,
+    pattern: &Regex,
+    invert_match: bool,
+) -> MyResult<Vec<String>> {
+    let mut matches = vec![];
+    let mut inv_matches = vec![];
+
+    let mut buf = String::new();
+    while let Ok(read_bytes) = file.read_line(&mut buf) {
+        if read_bytes == 0 {
+            break;
+        }
+        if pattern.is_match(&buf) {
+            matches.push(buf.clone());
+        } else {
+            inv_matches.push(buf.clone());
+        }
+        buf.clear()
+    }
+
+    let results = if invert_match { inv_matches } else { matches };
+
+    return Ok(results);
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use crate::find_lines;
+
     use super::find_files;
     use rand::{distributions::Alphanumeric, Rng};
+    use regex::{Regex, RegexBuilder};
 
     #[test]
     fn test_find_files() {
@@ -183,15 +226,60 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(files[0].is_err());
     }
+
+    #[test]
+    fn test_find_lines() {
+        let text = b"Lorem\nIpsum\r\nDOLOR";
+
+        // pattern "or" should match the one line, "Lorem"
+        let re1 = Regex::new("or").unwrap();
+        let matches = find_lines(Cursor::new(&text), &re1, false);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 1);
+
+        // When inverted, the function should match the other two lines
+        let matches = find_lines(Cursor::new(&text), &re1, true);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 2);
+
+        let re2 = RegexBuilder::new("or")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let matches = find_lines(Cursor::new(&text), &re2, false);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 2);
+
+        let matches = find_lines(Cursor::new(&text), &re2, true);
+        assert!(matches.is_ok());
+        assert_eq!(matches.unwrap().len(), 1);
+    }
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("pattern \"{}\"", config.pattern);
     let entries = find_files(&config.files, config.recursive);
     for entry in entries {
         match entry {
-            Ok(filename) => println!("field \"{}\"", filename),
             Err(e) => eprintln!("{}", e),
+            Ok(filename) => match open(&filename) {
+                Err(e) => eprintln!("{}: {}", filename, e),
+                Ok(file) => {
+                    let matches = find_lines(file, &config.pattern, config.invert_match)?;
+                    let fname = if config.recursive || config.files.len() > 1 {
+                        format!("{}:", filename)
+                    } else {
+                        "".to_string()
+                    };
+                    if config.count {
+                        println!("{}{}", fname, matches.len());
+                    } else {
+                        for line in matches {
+                            print!("{}{}", fname, line);
+                        }
+                    }
+                }
+            },
         }
     }
     Ok(())
