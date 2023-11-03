@@ -154,25 +154,42 @@ fn find_lines<T: BufRead>(
     pattern: &Regex,
     invert_match: bool,
 ) -> MyResult<Vec<String>> {
-    let mut matches = vec![];
-    let mut inv_matches = vec![];
+    // let mut matches = vec![];
+    // let mut inv_matches = vec![];
+    //
+    // let mut buf = String::new();
+    // while let Ok(read_bytes) = file.read_line(&mut buf) {
+    //     if read_bytes == 0 {
+    //         break;
+    //     }
+    //     if pattern.is_match(&buf) {
+    //         matches.push(buf.clone());
+    //     } else {
+    //         inv_matches.push(buf.clone());
+    //     }
+    //     buf.clear()
+    // }
+    //
+    // let results = if invert_match { inv_matches } else { matches };
+    //
+    // return Ok(results);
 
-    let mut buf = String::new();
-    while let Ok(read_bytes) = file.read_line(&mut buf) {
+    let mut matches = vec![];
+    let mut line = String::new();
+
+    loop {
+        let read_bytes = file.read_line(&mut line)?;
         if read_bytes == 0 {
             break;
         }
-        if pattern.is_match(&buf) {
-            matches.push(buf.clone());
-        } else {
-            inv_matches.push(buf.clone());
+
+        if pattern.is_match(&line) ^ invert_match {
+            matches.push(std::mem::take(&mut line));
         }
-        buf.clear()
+
+        line.clear();
     }
-
-    let results = if invert_match { inv_matches } else { matches };
-
-    return Ok(results);
+    Ok(matches)
 }
 
 #[cfg(test)]
