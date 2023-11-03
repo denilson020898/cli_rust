@@ -86,42 +86,21 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
         .map(|path| {
             let walks = WalkDir::new(path);
             let walks = if recursive { walks } else { walks.max_depth(0) };
-            // walks.into_iter().filter_map(|e| match e {
-            //     Ok(entry) => {
-            //         if entry.path().is_dir() && !recursive {
-            //             return Some(entry);
-            //         } else if entry.path().is_dir() && recursive {
-            //             return None;
-            //         }
-            //         Some(entry)
-            //     }
-            //     Err(e) => {
-            //         eprintln!("{}", e);
-            //         None
-            //     }
-            // })
-            walks.into_iter().map(|e| match e {
-                Ok(entry) => Ok(entry),
-                Err(e) => Err(e),
-            })
+            walks.into_iter()
         })
         .flatten()
-        // .map(|entry| {
-        //     let new_path = entry.path();
-        //     let new_path_string = new_path.display().to_string();
-        //     if new_path.is_dir() {
-        //         return Err(format!("{} is a directory", new_path_string).into());
-        //     }
-        //     return Ok(new_path_string);
-        // })
-        .map(|entry| {
-            let binding = entry?;
-            let new_path = binding.path();
-            let new_path_string = new_path.display().to_string();
-            // if new_path.is_dir() {
-            //     return Err(format!("{} is a directory", new_path_string).into());
-            // }
-            return Ok(new_path_string);
+        .filter_map(|e| match e {
+            Ok(e) => {
+                let is_dir = e.path().is_dir();
+                let path = e.path().display().to_string();
+                if !recursive && is_dir {
+                    return Some(Err(format!("{} is a directory", path).into()));
+                } else if recursive && is_dir {
+                    return None;
+                }
+                Some(Ok(path))
+            }
+            Err(e) => Some(Err(e.into())),
         })
         .collect::<Vec<_>>()
 }
@@ -178,7 +157,6 @@ pub fn run(config: Config) -> MyResult<()> {
     println!("pattern \"{}\"", config.pattern);
     let entries = find_files(&config.files, config.recursive);
     for entry in entries {
-        println!("{:?}", entry);
         match entry {
             Ok(filename) => println!("field \"{}\"", filename),
             Err(e) => eprintln!("{}", e),
