@@ -84,9 +84,46 @@ fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
     paths
         .into_iter()
         .map(|path| {
-            let mut walked_path = :walked_path
+            let walks = WalkDir::new(path);
+            let walks = if recursive { walks } else { walks.max_depth(0) };
+            // walks.into_iter().filter_map(|e| match e {
+            //     Ok(entry) => {
+            //         if entry.path().is_dir() && !recursive {
+            //             return Some(entry);
+            //         } else if entry.path().is_dir() && recursive {
+            //             return None;
+            //         }
+            //         Some(entry)
+            //     }
+            //     Err(e) => {
+            //         eprintln!("{}", e);
+            //         None
+            //     }
+            // })
+            walks.into_iter().map(|e| match e {
+                Ok(entry) => Ok(entry),
+                Err(e) => Err(e),
+            })
         })
-
+        .flatten()
+        // .map(|entry| {
+        //     let new_path = entry.path();
+        //     let new_path_string = new_path.display().to_string();
+        //     if new_path.is_dir() {
+        //         return Err(format!("{} is a directory", new_path_string).into());
+        //     }
+        //     return Ok(new_path_string);
+        // })
+        .map(|entry| {
+            let binding = entry?;
+            let new_path = binding.path();
+            let new_path_string = new_path.display().to_string();
+            // if new_path.is_dir() {
+            //     return Err(format!("{} is a directory", new_path_string).into());
+            // }
+            return Ok(new_path_string);
+        })
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
@@ -105,7 +142,7 @@ mod tests {
         let files = find_files(&["./tests/inputs".to_string()], false);
         assert_eq!(files.len(), 1);
         if let Err(e) = &files[0] {
-            assert_eq!(e.to_string(), "./test/inputs is a directory");
+            assert_eq!(e.to_string(), "./tests/inputs is a directory");
         }
 
         let res = find_files(&["./tests/inputs".to_string()], true);
@@ -138,6 +175,14 @@ mod tests {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
+    println!("pattern \"{}\"", config.pattern);
+    let entries = find_files(&config.files, config.recursive);
+    for entry in entries {
+        println!("{:?}", entry);
+        match entry {
+            Ok(filename) => println!("field \"{}\"", filename),
+            Err(e) => eprintln!("{}", e),
+        }
+    }
     Ok(())
 }
