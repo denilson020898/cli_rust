@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -81,28 +81,60 @@ pub fn get_args() -> MyResult<Config> {
 }
 
 fn find_files(paths: &[String], recursive: bool) -> Vec<MyResult<String>> {
-    paths
-        .into_iter()
-        .map(|path| {
-            let walks = WalkDir::new(path);
-            let walks = if recursive { walks } else { walks.max_depth(0) };
-            walks.into_iter()
-        })
-        .flatten()
-        .filter_map(|e| match e {
-            Ok(e) => {
-                let is_dir = e.path().is_dir();
-                let path = e.path().display().to_string();
-                if !recursive && is_dir {
-                    return Some(Err(format!("{} is a directory", path).into()));
-                } else if recursive && is_dir {
-                    return None;
-                }
-                Some(Ok(path))
+    let mut results = vec![];
+
+    for path in paths {
+        match path.as_str() {
+            "-" => results.push(Ok(path.to_string())),
+            _ => {
+                let walks = WalkDir::new(path);
+                let walks = if recursive { walks } else { walks.max_depth(0) };
+                let walked_path = walks
+                    .into_iter()
+                    .filter_map(|e| match e {
+                        Ok(e) => {
+                            let is_dir = e.path().is_dir();
+                            let path = e.path().display().to_string();
+                            if !recursive && is_dir {
+                                return Some(Err(format!("{} is a directory", path).into()));
+                            } else if recursive && is_dir {
+                                return None;
+                            }
+                            Some(Ok(path))
+                        }
+                        Err(e) => Some(Err(e.into())),
+                    })
+                    .collect::<Vec<_>>();
+
+                results.extend(walked_path.into_iter())
             }
-            Err(e) => Some(Err(e.into())),
-        })
-        .collect::<Vec<_>>()
+        }
+    }
+
+    return results;
+
+    // paths
+    //     .into_iter()
+    //     .map(|path| {
+    //         let walks = WalkDir::new(path);
+    //         let walks = if recursive { walks } else { walks.max_depth(0) };
+    //         walks.into_iter()
+    //     })
+    //     .flatten()
+    //     .filter_map(|e| match e {
+    //         Ok(e) => {
+    //             let is_dir = e.path().is_dir();
+    //             let path = e.path().display().to_string();
+    //             if !recursive && is_dir {
+    //                 return Some(Err(format!("{} is a directory", path).into()));
+    //             } else if recursive && is_dir {
+    //                 return None;
+    //             }
+    //             Some(Ok(path))
+    //         }
+    //         Err(e) => Some(Err(e.into())),
+    //     })
+    //     .collect::<Vec<_>>()
 }
 
 #[cfg(test)]
