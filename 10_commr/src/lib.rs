@@ -18,6 +18,12 @@ pub struct Config {
     delimiter: String,
 }
 
+enum Column<'a> {
+    Col1(&'a str),
+    Col2(&'a str),
+    Col3(&'a str),
+}
+
 pub fn get_args() -> MyResult<Config> {
     let matches = App::new("commr")
         .version("0.1.0")
@@ -108,9 +114,89 @@ pub fn run(config: Config) -> MyResult<()> {
         return Err(From::from("Both input files cannot be STDIN (\"-\")"));
     }
 
-    let _file1 = open(file1)?;
-    let _file2 = open(file2)?;
+    let case = |line: String| {
+        if config.insensitive {
+            line.to_lowercase()
+        } else {
+            line
+        }
+    };
 
-    println!("Opened {} and {}", file1, file2);
+    let print = |col: Column| {
+        let mut columns = vec![];
+        match col {
+            Column::Col1(val) => {
+                if config.show_col1 {
+                    columns.push(val);
+                }
+            }
+            Column::Col2(val) => {
+                if config.show_col2 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
+            Column::Col3(val) => {
+                if config.show_col3 {
+                    if config.show_col1 {
+                        columns.push("");
+                    }
+                    if config.show_col2 {
+                        columns.push("");
+                    }
+                    columns.push(val);
+                }
+            }
+        };
+
+        if !columns.is_empty() {
+            println!("{}", columns.join(&config.delimiter))
+        }
+    };
+
+    let mut lines1 = open(file1)?.lines().filter_map(Result::ok).map(case);
+    let mut lines2 = open(file2)?.lines().filter_map(Result::ok).map(case);
+
+    let mut line1 = lines1.next();
+    let mut line2 = lines2.next();
+
+    while line1.is_some() || line2.is_some() {
+        match (&line1, &line2) {
+            (Some(val1), Some(val2)) => match val1.cmp(val2) {
+                std::cmp::Ordering::Equal => {
+                    // println!("{}", val1);
+                    print(Column::Col3(val1));
+                    line1 = lines1.next();
+                    line2 = lines2.next();
+                }
+                std::cmp::Ordering::Less => {
+                    // println!("{}", val1);
+                    print(Column::Col1(val1));
+                    line1 = lines1.next();
+                }
+                std::cmp::Ordering::Greater => {
+                    // println!("{}", val2);
+                    print(Column::Col2(val2));
+                    line2 = lines2.next();
+                }
+            },
+            (Some(val1), None) => {
+                // println!("{}", val1);
+                print(Column::Col1(val1));
+                line1 = lines1.next();
+            }
+            (None, Some(val2)) => {
+                // println!("{}", val2);
+                print(Column::Col2(val2));
+                line2 = lines2.next();
+            }
+            _ => (),
+        };
+        // println!("line1 = {:?}", line1);
+        // println!("line2 = {:?}", line2);
+    }
+
     Ok(())
 }
