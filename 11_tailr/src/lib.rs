@@ -6,6 +6,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Seek;
+use std::io::SeekFrom;
 use std::ops::Deref;
 use std::{error::Error, fs::File};
 
@@ -143,15 +144,40 @@ fn count_lines_bytes(filename: &str) -> MyResult<(i64, i64)> {
 }
 
 fn print_lines(mut file: impl BufRead, num_lines: &TakeValue, total_lines: i64) -> MyResult<()> {
-    unimplemented!()
+    if let Some(start) = get_start_index(num_lines, total_lines) {
+        let mut line_num = 0;
+        let mut buf = Vec::new();
+        loop {
+            let bytes_read = file.read_until(b'\n', &mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            if line_num >= start {
+                print!("{}", String::from_utf8_lossy(&buf));
+            }
+            line_num += 1;
+
+            buf.clear();
+        }
+    }
+    Ok(())
 }
 
 fn print_bytes<T: Read + Seek>(
     mut file: T,
-    num_lines: &TakeValue,
+    num_bytes: &TakeValue,
     total_lines: i64,
 ) -> MyResult<()> {
-    unimplemented!()
+    if let Some(start) = get_start_index(num_bytes, total_lines) {
+        file.seek(SeekFrom::Start(start))?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        if !buf.is_empty() {
+            print!("{}", String::from_utf8_lossy(&buf));
+        }
+    }
+    Ok(())
 }
 
 fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
@@ -160,6 +186,10 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
     }
     match take_val {
         TakeValue::PlusZero => {
+            // let start_index = total as u64 - 1;
+            if total > 0 {
+                return Some(0)
+            }
             let start_index = total as u64 - 1;
             return Some(start_index);
         }
@@ -183,15 +213,24 @@ fn get_start_index(take_val: &TakeValue, total: i64) -> Option<u64> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    for filename in config.files {
+    let num_files = config.files.len();
+    for (file_num, filename) in config.files.iter().enumerate() {
         match File::open(&filename) {
             Err(err) => eprintln!("{}: {}", filename, err),
-            Ok(_) => {
+            Ok(file) => {
+                if !config.quiet && num_files > 1 {
+                    println!("{}==> {} <==",
+                        if file_num > 0 { "\n" } else { "" },
+                        filename
+                    );
+                }
+
                 let (total_lines, total_bytes) = count_lines_bytes(&filename)?;
-                println!(
-                    "{} has {} lines and {} bytes",
-                    filename, total_lines, total_bytes
-                );
+                if let Some(num_bytes) = &config.bytes {
+                    print_bytes(BufReader::new(file), &num_bytes, total_bytes)?;
+                } else {
+                    print_lines(BufReader::new(file), &config.lines, total_lines)?;
+                }
             }
         }
     }
