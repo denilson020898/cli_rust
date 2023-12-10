@@ -84,7 +84,8 @@ fn parse_u64(val: &str) -> MyResult<u64> {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:#?}", config);
+    let files = find_files(&config.sources)?;
+    println!("{:#?}", files);
     Ok(())
 }
 
@@ -109,7 +110,7 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
         .iter()
         .flat_map(|path| {
             WalkDir::new(path)
-                .max_depth(1)
+                // .max_depth(1)
                 .sort_by_file_name()
                 .into_iter()
                 .filter_map(|e| match e {
