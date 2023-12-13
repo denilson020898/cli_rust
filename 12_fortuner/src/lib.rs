@@ -90,21 +90,30 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
-    let mut paths_buf = paths
-        .into_iter()
-        .map(PathBuf::from)
-        .collect::<Vec<PathBuf>>();
+    // let mut paths_buf = paths
+    //     .into_iter()
+    //     .map(PathBuf::from)
+    //     .filter(|f| f.try_exists().unwrap())
+    //     .collect::<Vec<PathBuf>>();
+
+    let mut paths_buf = Vec::new();
+    for path in paths {
+        let path_buf = PathBuf::from(path);
+        path_buf.try_exists()?;
+        paths_buf.push(path_buf);
+    }
+
     paths_buf.sort();
     paths_buf.dedup();
 
-    for path in paths_buf.iter() {
-        if !path.exists() {
-            return Err(From::from(format!(
-                "Path to \"{}\" does not exist",
-                path.to_string_lossy()
-            )));
-        }
-    }
+    // for path in paths_buf.iter() {
+    //     if !path.exists() {
+    //         return Err(From::from(format!(
+    //             "Path to \"{}\" does not exist",
+    //             path.to_string_lossy()
+    //         )));
+    //     }
+    // }
 
     let paths_buf = paths_buf
         .iter()
@@ -117,7 +126,7 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
                     Ok(entry) => {
                         let entry_path = entry.path();
 
-                        if path.is_dir() && entry_path == path.as_path() {
+                        if entry_path.is_dir() {
                             None
                         } else {
                             match entry_path.extension() {
