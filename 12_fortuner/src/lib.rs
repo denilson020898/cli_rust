@@ -1,4 +1,4 @@
-use std::{error::Error, path::PathBuf, vec};
+use std::{error::Error, ffi::OsStr, path::PathBuf, vec};
 
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
@@ -49,18 +49,6 @@ pub fn get_args() -> MyResult<Config> {
 
     let seed = matches.value_of("seed").map(parse_u64).transpose()?;
 
-    // # control flow is too complicated, using transpose is cooler
-    //
-    // let pattern = if let Some(pattern) = matches.value_of("pattern") {
-    //     let rgx_pattern = RegexBuilder::new(pattern)
-    //         .case_insensitive(matches.is_present("insensitive"))
-    //         .build()
-    //         .map_err(|_| format!("Invalid --pattern \"{}\"", pattern))?;
-    //     Some(rgx_pattern)
-    // } else {
-    //     None
-    // };
-
     let pattern = matches
         .value_of("pattern")
         .map(|val| {
@@ -90,55 +78,25 @@ pub fn run(config: Config) -> MyResult<()> {
 }
 
 fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
-    // let mut paths_buf = paths
-    //     .into_iter()
-    //     .map(PathBuf::from)
-    //     .filter(|f| f.try_exists().unwrap())
-    //     .collect::<Vec<PathBuf>>();
-
     let mut paths_buf = Vec::new();
     for path in paths {
-        let path_buf = PathBuf::from(path);
-        path_buf.try_exists()?;
-        paths_buf.push(path_buf);
+        match std::fs::metadata(path) {
+            Err(e) => return Err(format!("{}: {}", path, e).into()),
+            Ok(_) => paths_buf.extend(
+                WalkDir::new(path)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| {
+                        e.file_type().is_file() && e.path().extension() != Some(OsStr::new("dat"))
+                    })
+                    .map(|e| e.path().into()),
+            ),
+        };
     }
 
     paths_buf.sort();
     paths_buf.dedup();
 
-    // for path in paths_buf.iter() {
-    //     if !path.exists() {
-    //         return Err(From::from(format!(
-    //             "Path to \"{}\" does not exist",
-    //             path.to_string_lossy()
-    //         )));
-    //     }
-    // }
-
-    let paths_buf = paths_buf
-        .iter()
-        .flat_map(|path| {
-            WalkDir::new(path)
-                // .max_depth(1)
-                .sort_by_file_name()
-                .into_iter()
-                .filter_map(|e| match e {
-                    Ok(entry) => {
-                        let entry_path = entry.path();
-
-                        if entry_path.is_dir() {
-                            None
-                        } else {
-                            match entry_path.extension() {
-                                Some(ext) if ext == "dat" => None,
-                                _ => Some(entry.into_path()),
-                            }
-                        }
-                    }
-                    _ => None,
-                })
-        })
-        .collect::<Vec<PathBuf>>();
     return Ok(paths_buf);
 }
 
@@ -162,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_files() {
+    fn test_find_file_one_file_pass() {
         // success call, able to find
         let res = find_files(&["./tests/inputs/jokes".to_string()]);
         assert!(res.is_ok());
@@ -173,11 +131,17 @@ mod tests {
             files.get(0).unwrap().to_string_lossy(),
             "./tests/inputs/jokes"
         );
+    }
 
+    #[test]
+    fn test_find_file_does_not_exists_should_fail() {
         // failed call
         let res = find_files(&["/path/does/not/exist".to_string()]);
         assert!(res.is_err());
+    }
 
+    #[test]
+    fn test_find_file_directory_without_dat_extension_pass() {
         // finds all input files, excludes ".dat"
         let res = find_files(&["./tests/inputs".to_string()]);
         assert!(res.is_ok());
@@ -189,7 +153,10 @@ mod tests {
         assert!(first.contains("ascii-art"));
         let last = files.last().unwrap().display().to_string();
         assert!(last.contains("quotes"));
+    }
 
+    #[test]
+    fn test_find_file_multiple_file_path_pass() {
         // test multiple sources, path must be unique and sorted
         let res = find_files(&[
             "./tests/inputs/jokes".to_string(),
