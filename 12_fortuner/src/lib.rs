@@ -4,10 +4,10 @@ use std::{
     fs::File,
     io::{BufRead, BufReader},
     path::PathBuf,
-    vec,
 };
 
 use clap::{App, Arg};
+use rand::{seq::SliceRandom, SeedableRng};
 use regex::{Regex, RegexBuilder};
 use walkdir::WalkDir;
 
@@ -86,7 +86,8 @@ fn parse_u64(val: &str) -> MyResult<u64> {
 
 pub fn run(config: Config) -> MyResult<()> {
     let files = find_files(&config.sources)?;
-    println!("{:#?}", files);
+    let fortunes = read_fortunes(&files)?;
+    println!("{:#?}", pick_fortune(&fortunes, config.seed));
     Ok(())
 }
 
@@ -117,7 +118,6 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
     let mut result: Vec<Fortune> = Vec::new();
 
     for path in paths {
-
         let file = File::open(path)?;
         let mut buf_reader = BufReader::new(file);
 
@@ -132,10 +132,7 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
             let text: String = raw_text.replace("%", "").trim().into();
 
             if !text.is_empty() {
-                let fortune = Fortune {
-                    sources,
-                    text,
-                };
+                let fortune = Fortune { sources, text };
                 result.push(fortune);
             }
             buf.clear();
@@ -145,11 +142,23 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
     Ok(result)
 }
 
+fn pick_fortune(fortunes: &[Fortune], seed: Option<u64>) -> Option<String> {
+    let chosen = if let Some(seed) = seed {
+        let mut thread_rng = rand::rngs::StdRng::seed_from_u64(seed);
+        fortunes.choose(&mut thread_rng)?
+    } else {
+        let mut thread_rng = rand::thread_rng();
+        fortunes.choose(&mut thread_rng)?
+    };
+
+    Some(chosen.text.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use crate::{find_files, parse_u64, read_fortunes};
+    use crate::{find_files, parse_u64, pick_fortune, read_fortunes, Fortune};
 
     #[test]
     fn test_parse_u64() {
@@ -254,5 +263,32 @@ mod tests {
         ]);
         assert!(res.is_ok());
         assert_eq!(res.unwrap().len(), 11);
+    }
+
+    #[test]
+    fn test_pick_fortunes() {
+        // create a slice of fortunes
+        let fortunes = &[
+            Fortune {
+                sources: "fortunes".to_string(),
+                text: "You cannot achieve the impossible without \
+                        attempting the absurd."
+                    .to_string(),
+            },
+            Fortune {
+                sources: "fortunes".to_string(),
+                text: "Assumption is mother of all screw-ups.".to_string(),
+            },
+            Fortune {
+                sources: "fortunes".to_string(),
+                text: "Neckties strangle clear thinking.".to_string(),
+            },
+        ];
+
+        // pick a fortune with a seed
+        assert_eq!(
+            pick_fortune(fortunes, Some(1)).unwrap(),
+            "Neckties strangle clear thinking.".to_string()
+        )
     }
 }
