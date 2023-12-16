@@ -22,7 +22,7 @@ pub struct Config {
 
 #[derive(Debug)]
 struct Fortune {
-    sources: String,
+    source: String,
     text: String,
 }
 
@@ -87,7 +87,30 @@ fn parse_u64(val: &str) -> MyResult<u64> {
 pub fn run(config: Config) -> MyResult<()> {
     let files = find_files(&config.sources)?;
     let fortunes = read_fortunes(&files)?;
-    println!("{:#?}", pick_fortune(&fortunes, config.seed));
+
+    if let Some(pattern) = config.pattern {
+        let mut source = None;
+        for fortune in fortunes
+            .iter()
+            .filter(|fortune| pattern.is_match(&fortune.text))
+        {
+            // true if changes, a bit complicated if map_or is not being well understood
+            if source.as_ref().map_or(true, |s| s != &fortune.source) {
+                eprintln!("({})\n%", fortune.source);
+                source = Some(fortune.source.clone());
+            }
+            println!("{}\n%", fortune.text);
+        }
+    } else {
+        println!(
+            "{}",
+            pick_fortune(&fortunes, config.seed)
+                // this will guard the unwrap, always assign if empty
+                .or_else(|| Some("No fortunes found".to_string()))
+                .unwrap()
+        );
+    }
+
     Ok(())
 }
 
@@ -123,7 +146,9 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
 
         let mut buf = Vec::new();
         loop {
-            let sources = path.to_string_lossy().to_string();
+            // safe to unwrap, filename is found
+            let sources = path.file_name().unwrap().to_string_lossy().into_owned();
+
             let bytes_read = buf_reader.read_until(b'%', &mut buf)?;
             if bytes_read == 0 {
                 break;
@@ -132,7 +157,10 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
             let text: String = raw_text.replace("%", "").trim().into();
 
             if !text.is_empty() {
-                let fortune = Fortune { sources, text };
+                let fortune = Fortune {
+                    source: sources,
+                    text,
+                };
                 result.push(fortune);
             }
             buf.clear();
@@ -143,15 +171,13 @@ fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
 }
 
 fn pick_fortune(fortunes: &[Fortune], seed: Option<u64>) -> Option<String> {
-    let chosen = if let Some(seed) = seed {
+    if let Some(seed) = seed {
         let mut thread_rng = rand::rngs::StdRng::seed_from_u64(seed);
-        fortunes.choose(&mut thread_rng)?
+        fortunes.choose(&mut thread_rng).map(|f| f.text.to_string())
     } else {
         let mut thread_rng = rand::thread_rng();
-        fortunes.choose(&mut thread_rng)?
-    };
-
-    Some(chosen.text.clone())
+        fortunes.choose(&mut thread_rng).map(|f| f.text.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -270,17 +296,17 @@ mod tests {
         // create a slice of fortunes
         let fortunes = &[
             Fortune {
-                sources: "fortunes".to_string(),
+                source: "fortunes".to_string(),
                 text: "You cannot achieve the impossible without \
                         attempting the absurd."
                     .to_string(),
             },
             Fortune {
-                sources: "fortunes".to_string(),
+                source: "fortunes".to_string(),
                 text: "Assumption is mother of all screw-ups.".to_string(),
             },
             Fortune {
-                sources: "fortunes".to_string(),
+                source: "fortunes".to_string(),
                 text: "Neckties strangle clear thinking.".to_string(),
             },
         ];
