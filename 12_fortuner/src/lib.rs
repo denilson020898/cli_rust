@@ -1,4 +1,11 @@
-use std::{error::Error, ffi::OsStr, path::PathBuf, vec};
+use std::{
+    error::Error,
+    ffi::OsStr,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+    vec,
+};
 
 use clap::{App, Arg};
 use regex::{Regex, RegexBuilder};
@@ -11,6 +18,12 @@ pub struct Config {
     sources: Vec<String>,
     pattern: Option<Regex>,
     seed: Option<u64>,
+}
+
+#[derive(Debug)]
+struct Fortune {
+    sources: String,
+    text: String,
 }
 
 pub fn get_args() -> MyResult<Config> {
@@ -100,9 +113,43 @@ fn find_files(paths: &[String]) -> MyResult<Vec<PathBuf>> {
     return Ok(paths_buf);
 }
 
+fn read_fortunes(paths: &[PathBuf]) -> MyResult<Vec<Fortune>> {
+    let mut result: Vec<Fortune> = Vec::new();
+
+    for path in paths {
+
+        let file = File::open(path)?;
+        let mut buf_reader = BufReader::new(file);
+
+        let mut buf = Vec::new();
+        loop {
+            let sources = path.to_string_lossy().to_string();
+            let bytes_read = buf_reader.read_until(b'%', &mut buf)?;
+            if bytes_read == 0 {
+                break;
+            }
+            let raw_text = String::from_utf8_lossy(&buf).into_owned();
+            let text: String = raw_text.replace("%", "").trim().into();
+
+            if !text.is_empty() {
+                let fortune = Fortune {
+                    sources,
+                    text,
+                };
+                result.push(fortune);
+            }
+            buf.clear();
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{find_files, parse_u64};
+    use std::path::PathBuf;
+
+    use crate::{find_files, parse_u64, read_fortunes};
 
     #[test]
     fn test_parse_u64() {
@@ -173,5 +220,39 @@ mod tests {
         if let Some(filename) = files.last().unwrap().file_name() {
             assert_eq!(filename.to_string_lossy(), "jokes".to_string())
         }
+    }
+
+    #[test]
+    fn test_read_fortunes_one_input_file() {
+        // one input file
+        let res = read_fortunes(&[PathBuf::from("./tests/inputs/jokes")]);
+        assert!(res.is_ok());
+
+        if let Ok(fortunes) = res {
+            // correct number and sorting
+            assert_eq!(fortunes.len(), 6);
+
+            assert_eq!(
+                fortunes.first().unwrap().text,
+                "Q. What do you call a head of lettuce in a shirt and tie?\n\
+                A. Collared greens."
+            );
+
+            assert_eq!(
+                fortunes.last().unwrap().text,
+                "Q: What do you call a deer wearing an eye patch?\n\
+                A: A bad idea (bad-eye deer)."
+            );
+        }
+    }
+
+    #[test]
+    fn test_read_fortunes_multiple_input_file() {
+        let res = read_fortunes(&[
+            PathBuf::from("./tests/inputs/jokes"),
+            PathBuf::from("./tests/inputs/quotes"),
+        ]);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap().len(), 11);
     }
 }
