@@ -2,6 +2,7 @@ use std::{error::Error, str::FromStr};
 
 use chrono::{Datelike, Local, NaiveDate};
 use clap::{App, Arg};
+use itertools::izip;
 
 const MONTH_NAMES: [&str; 12] = [
     "January",
@@ -144,7 +145,10 @@ fn format_month(year: i32, month: u32, print_year: bool, today: NaiveDate) -> Ve
 
     let ymd_at_one = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
     let weekday = ymd_at_one.and_hms_opt(0, 0, 1).unwrap().weekday();
-    let days_to_skip = weekday.number_from_monday();
+    let days_to_skip = match weekday {
+        chrono::Weekday::Sun => 0_u32,
+        _ => weekday.number_from_monday(),
+    };
 
     let last_day = last_day_in_month(year, month);
     let last_day_num = last_day.day0();
@@ -194,8 +198,26 @@ fn last_day_in_month(year: i32, month: u32) -> NaiveDate {
 }
 
 pub fn run(config: Config) -> MyResult<()> {
-    for line in format_month(config.year, config.month.unwrap(), true, config.today).iter() {
-        println!("{}", line);
+    if let Some(month) = config.month {
+        for line in format_month(config.year, month, true, config.today).iter() {
+            println!("{}", line);
+        }
+    } else {
+        println!("{:>32}", config.year);
+        let months: Vec<_> = (1..13)
+            .into_iter()
+            .map(|month| format_month(config.year, month, false, config.today))
+            .collect();
+        for (i, chunk) in months.chunks(3).enumerate() {
+            if let [m1, m2, m3] = chunk {
+                for (w1, w2, w3) in izip!(m1, m2, m3) {
+                    println!("{}{}{}", w1, w2, w3);
+                }
+                if i < 3 {
+                    println!();
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -385,5 +407,21 @@ mod tests {
             "                      ",
         ];
         assert_eq!(format_month(2021, 4, true, today), april_with_highlight);
+    }
+
+    #[test]
+    fn test_format_month_2023_10_ok() {
+        let today = NaiveDate::from_ymd_opt(0, 1, 1).unwrap();
+        let october = vec![
+            "    October 2023      ",
+            "Su Mo Tu We Th Fr Sa  ",
+            " 1  2  3  4  5  6  7  ",
+            " 8  9 10 11 12 13 14  ",
+            "15 16 17 18 19 20 21  ",
+            "22 23 24 25 26 27 28  ",
+            "29 30 31              ",
+            "                      ",
+        ];
+        assert_eq!(format_month(2023, 10, true, today), october);
     }
 }
