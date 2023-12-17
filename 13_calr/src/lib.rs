@@ -98,12 +98,6 @@ fn parse_year(year: &str) -> MyResult<i32> {
 }
 
 fn parse_month(month: &str) -> MyResult<u32> {
-    // let month = parse_int::<u32>(month).map_err(|_| format!("Invalid month \"{}\"", month))?;
-    // if month < 1 || month > 12 {
-    //     return Err(format!("month \"{}\" not in the range 1 through 12", month).into());
-    // }
-    // Ok(month)
-
     match parse_int(month) {
         Ok(num) => {
             if (1..=12).contains(&num) {
@@ -135,14 +129,82 @@ fn parse_month(month: &str) -> MyResult<u32> {
     }
 }
 
+fn format_month(year: i32, month: u32, print_year: bool, today: NaiveDate) -> Vec<String> {
+    let mut result = vec![];
+
+    let month_name = MONTH_NAMES.get(month as usize - 1).unwrap();
+    let header = if print_year {
+        format!("{} {}  ", month_name, year)
+    } else {
+        format!("{}  ", month_name)
+    };
+
+    result.push(format!("{:^width$}", header, width = LINE_WIDTH));
+    result.push("Su Mo Tu We Th Fr Sa  ".to_string());
+
+    let ymd_at_one = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
+    let weekday = ymd_at_one.and_hms_opt(0, 0, 1).unwrap().weekday();
+    let days_to_skip = weekday.number_from_monday();
+
+    let last_day = last_day_in_month(year, month);
+    let last_day_num = last_day.day0();
+
+    let mut counter_start = 0_usize;
+
+    let days: Vec<_> = vec![Some(0); 7 * 6]
+        .into_iter()
+        .enumerate()
+        .map(|(i, _e)| {
+            if i < days_to_skip as usize || i > (last_day_num + days_to_skip) as usize {
+                None
+            } else {
+                counter_start += 1;
+                Some(counter_start)
+            }
+        })
+        .collect();
+
+    for week in days.chunks(7) {
+        let week_formatted: Vec<_> = week
+            .into_iter()
+            .map(|w| match *w {
+                Some(e) => {
+                    let mut date_aligned = format!("{:>2}", e);
+                    if year == today.year() && month == today.month() && today.day() as usize == e {
+                        let reverse = ansi_term::Style::new().reverse();
+                        date_aligned = format!("{}", reverse.paint(date_aligned));
+                    }
+                    date_aligned
+                }
+                None => "  ".to_string(),
+            })
+            .collect();
+        let joined = week_formatted.join(" ");
+        result.push(format!("{}  ", joined));
+    }
+    result
+}
+
+/// no need to handle panic here, too complicated
+/// basically if date = 12, we can't go to next year (12 + 1) - 1 day by pred method
+fn last_day_in_month(year: i32, month: u32) -> NaiveDate {
+    let next_month_first_day = NaiveDate::from_ymd_opt(year, month + 1, 1)
+        .unwrap_or(NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap());
+    next_month_first_day.pred_opt().unwrap()
+}
+
 pub fn run(config: Config) -> MyResult<()> {
-    println!("{:?}", config);
+    for line in format_month(config.year, config.month.unwrap(), true, config.today).iter() {
+        println!("{}", line);
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{parse_int, parse_month, parse_year};
+    use chrono::NaiveDate;
+
+    use crate::{format_month, last_day_in_month, parse_int, parse_month, parse_year};
 
     #[test]
     fn test_parse_int_as_usize() {
@@ -313,7 +375,7 @@ mod tests {
     fn test_format_month_2021_4_ok() {
         let today = NaiveDate::from_ymd_opt(2021, 4, 7).unwrap();
         let april_with_highlight = vec![
-            "      April 2021      ",
+            "     April 2021       ",
             "Su Mo Tu We Th Fr Sa  ",
             "             1  2  3  ",
             " 4  5  6 \u{1b}[7m 7\u{1b}[0m  8  9 10  ",
