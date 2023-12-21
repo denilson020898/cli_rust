@@ -2,8 +2,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::prelude::MetadataExt;
 use std::{error::Error, fmt::format, path::PathBuf};
 
+use chrono::{DateTime, Local};
 use clap::{App, Arg};
 use tabular::{Row, Table};
+use users::{get_user_by_uid, get_group_by_gid};
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 
@@ -76,15 +78,22 @@ fn format_output(paths: &[PathBuf]) -> MyResult<String> {
     for path in paths {
         let md = path.metadata()?;
 
+        let modified: DateTime<Local> = DateTime::from(md.modified()?);
+        let uid = md.uid();
+        let user = get_user_by_uid(uid).map(|u| u.name().to_string_lossy().into_owned()).unwrap_or_else(||uid.to_string());
+
+        let gid = md.gid();
+        let group = get_group_by_gid(gid).map(|g| g.name().to_string_lossy().into_owned()).unwrap_or_else(||gid.to_string());
+
         table.add_row(
             Row::new()
                 .with_cell(if md.is_dir() { "d" } else { "-" }) //  1 "d" or "-"
                 .with_cell(format_mode(md.permissions().mode())) //  2 permission
-                .with_cell("4") //  3 num of symlinks
-                .with_cell("5") //  4 username
-                .with_cell("6") //  5 group name
+                .with_cell(md.nlink()) //  3 num of symlinks
+                .with_cell(user) //  4 username
+                .with_cell(group) //  5 group name
                 .with_cell(md.size().to_string()) //  6 size in bytes
-                .with_cell("8") //  7 last modification
+                .with_cell(modified.format("%b %d %y %H:%M")) //  7 last modification
                 .with_cell(path.display()), // 8 path
         );
     }
