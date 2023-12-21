@@ -1,0 +1,71 @@
+warning: unused import: `Path`
+ --> src/lib.rs:3:12
+  |
+3 |     path::{Path, PathBuf},
+  |            ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: field `long` is never read
+  --> src/lib.rs:13:5
+   |
+11 | pub struct Config {
+   |            ------ field in this struct
+12 |     paths: Vec<String>,
+13 |     long: bool,
+   |     ^^^^
+   |
+   = note: `Config` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: found module declaration for lib.rs
+ --> src/main.rs:1:1
+  |
+1 | mod lib;
+  | ^^^^^^^^
+  |
+  = note: lib.rs is the root of this crate's library target
+  = help: to refer to it from other targets, use the library's name as the path
+  = note: `#[warn(special_module_name)]` on by default
+
+warning: type alias `MyResult` is never used
+ --> src/lib.rs:8:6
+  |
+8 | type MyResult<T> = Result<T, Box<dyn Error>>;
+  |      ^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` on by default
+
+warning: fields `paths`, `long`, and `show_hidden` are never read
+  --> src/lib.rs:12:5
+   |
+11 | pub struct Config {
+   |            ------ fields in this struct
+12 |     paths: Vec<String>,
+   |     ^^^^^
+13 |     long: bool,
+   |     ^^^^
+14 |     show_hidden: bool,
+   |     ^^^^^^^^^^^
+   |
+   = note: `Config` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: function `find_files` is never used
+  --> src/lib.rs:17:4
+   |
+17 | fn find_files(paths: &[String], show_hidden: bool) ->...
+   |    ^^^^^^^^^^
+
+warning: function `get_args` is never used
+   --> src/lib.rs:134:8
+    |
+134 | pub fn get_args() -> MyResult<Config> {
+    |        ^^^^^^^^
+
+warning: function `run` is never used
+   --> src/lib.rs:168:8
+    |
+168 | pub fn run(config: Config) -> MyResult<()> {
+    |        ^^^
+
+blargg: No such file or directory (os error 2)
